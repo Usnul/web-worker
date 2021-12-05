@@ -15,11 +15,14 @@
  */
 
 import URL from 'url';
+import fs from 'fs';
 import VM from 'vm';
 import threads from 'worker_threads';
 
 const WORKER = Symbol.for('worker');
 const EVENTS = Symbol.for('events');
+
+const rx_url_schema = /[a-zA-Z0-9_\-]+\:\/\//;
 
 class EventTarget {
 	constructor() {
@@ -27,13 +30,13 @@ class EventTarget {
 			value: new Map()
 		});
 	}
+
 	dispatchEvent(event) {
 		event.target = event.currentTarget = this;
-		if (this['on'+event.type]) {
+		if (this['on' + event.type]) {
 			try {
-				this['on'+event.type](event);
-			}
-			catch (err) {
+				this['on' + event.type](event);
+			} catch (err) {
 				console.error(err);
 			}
 		}
@@ -42,17 +45,18 @@ class EventTarget {
 		list.forEach(handler => {
 			try {
 				handler.call(this, event);
-			}
-			catch (err) {
+			} catch (err) {
 				console.error(err);
 			}
 		});
 	}
+
 	addEventListener(type, fn) {
 		let events = this[EVENTS].get(type);
 		if (!events) this[EVENTS].set(type, events = []);
 		events.push(fn);
 	}
+
 	removeEventListener(type, fn) {
 		let events = this[EVENTS].get(type);
 		if (events) {
@@ -120,13 +124,16 @@ function mainThread() {
 				this.dispatchEvent(new Event('close'));
 			});
 		}
+
 		postMessage(data, transferList) {
 			this[WORKER].postMessage(data, transferList);
 		}
+
 		terminate() {
 			this[WORKER].terminate();
 		}
 	}
+
 	Worker.prototype.onmessage = Worker.prototype.onerror = Worker.prototype.onclose = null;
 	return Worker;
 }
@@ -139,11 +146,15 @@ function workerThread() {
 
 	// enqueue messages to dispatch after modules are loaded
 	let q = [];
+
 	function flush() {
 		const buffered = q;
 		q = null;
-		buffered.forEach(event => { self.dispatchEvent(event); });
+		buffered.forEach(event => {
+			self.dispatchEvent(event);
+		});
 	}
+
 	threads.parentPort.on('message', data => {
 		const event = new Event('message');
 		event.data = data;
@@ -159,11 +170,26 @@ function workerThread() {
 		postMessage(data, transferList) {
 			threads.parentPort.postMessage(data, transferList);
 		}
+
+		importScripts(...fileNames) {
+			importScripts.apply(null, fileNames);
+		}
+
+		/**
+		 * Supply node.js require
+		 * @param f
+		 * @return {*}
+		 */
+		require(f) {
+			return require(f);
+		}
+
 		// Emulates https://developer.mozilla.org/en-US/docs/Web/API/DedicatedWorkerGlobalScope/close
 		close() {
 			process.exit();
 		}
 	}
+
 	let proto = Object.getPrototypeOf(global);
 	delete proto.constructor;
 	Object.defineProperties(WorkerGlobalScope.prototype, proto);
@@ -191,10 +217,9 @@ function workerThread() {
 				evaluateDataUrl(mod, name);
 			}
 			else {
-				require(mod);
+				importScripts(mod);
 			}
-		}
-		catch (err) {
+		} catch (err) {
 			console.error(err);
 		}
 		Promise.resolve().then(flush);
@@ -204,19 +229,46 @@ function workerThread() {
 function evaluateDataUrl(url, name) {
 	const { data } = parseDataUrl(url);
 	return VM.runInThisContext(data, {
-		filename: 'worker.<'+(name || 'data:')+'>'
+		filename: 'worker.<' + (name || 'data:') + '>'
 	});
 }
 
 function parseDataUrl(url) {
 	let [m, type, encoding, data] = url.match(/^data: *([^;,]*)(?: *; *([^,]*))? *,(.*)$/) || [];
 	if (!m) throw Error('Invalid Data URL.');
-	if (encoding) switch (encoding.toLowerCase()) {
-		case 'base64':
-			data = Buffer.from(data, 'base64').toString();
-			break;
-		default:
-			throw Error('Unknown Data URL encoding "' + encoding + '"');
+
+	if (encoding) {
+		switch (encoding.toLowerCase()) {
+			case 'base64':
+				data = Buffer.from(data, 'base64').toString();
+				break;
+			default:
+				throw Error('Unknown Data URL encoding "' + encoding + '"');
+		}
 	}
+	else {
+		// undo URI encoding
+		data = decodeURIComponent(data);
+	}
+
 	return { type, data };
+}
+
+
+function importScripts(...fileNames) {
+	for (let i = 0; i < fileNames.length; i++) {
+		const file_name = fileNames[i];
+
+		let path;
+
+		if (file_name.search(rx_url_schema) === 0) {
+			// input is a URL
+			path = URL.fileURLToPath(file_name);
+		}
+		else {
+			path = file_name;
+		}
+
+		VM.runInThisContext(fs.readFileSync(path, 'utf-8'), { filename: path });
+	}
 }

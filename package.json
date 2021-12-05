@@ -1,6 +1,6 @@
 {
-  "name": "web-worker",
-  "version": "1.2.0",
+  "name": "@woosh/web-worker",
+  "version": "1.2.7",
   "description": "Consistent Web Workers in browser and Node.",
   "main": "./cjs/node.js",
   "browser": "./cjs/browser.js",
@@ -16,6 +16,10 @@
     "node.js",
     "index.d.ts"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "prepare": "babel node.js browser.js -d cjs",
     "test": "eslint '*.js' test && node --experimental-modules ./node_modules/.bin/ava"
@@ -26,7 +30,7 @@
       "babel-plugin-commonjs-lite"
     ]
   },
-  "repository": "developit/web-worker",
+  "repository": "Usnul/web-worker",
   "keywords": [
     "worker",
     "worker_threads",
@@ -37,7 +41,7 @@
   ],
   "authors": [],
   "license": "Apache-2.0",
-  "homepage": "https://github.com/developit/web-worker",
+  "homepage": "https://github.com/Usnul/web-worker",
   "eslintConfig": {
     "extends": "developit",
     "rules": {
